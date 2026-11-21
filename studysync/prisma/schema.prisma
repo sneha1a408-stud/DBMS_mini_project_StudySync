@@ -1,0 +1,143 @@
+// This is your Prisma schema file
+// Learn more: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Coordinator {
+  coordinator_id String   @id @default(uuid()) @db.VarChar(36)
+  name           String   @db.VarChar(100)
+  email          String   @unique @db.VarChar(255)
+  password_hash  String   @db.Text
+  created_at     DateTime @default(now())
+  courses        Course[]
+
+  @@map("coordinators")
+}
+
+model Student {
+  student_id     String            @id @default(uuid()) @db.VarChar(36)
+  name           String            @db.VarChar(100)
+  email          String            @unique @db.VarChar(255)
+  password_hash  String            @db.Text
+  learning_style String?           @db.VarChar(20)
+  bio            String?           @db.Text
+  is_active      Boolean           @default(true)
+  deleted_at     DateTime?
+  deleted_by     String?           @db.VarChar(36)
+  created_at     DateTime          @default(now())
+  availability   Availability[]
+  enrollments    Enrollment[]
+  created_groups StudyGroup[]      @relation("GroupCreator")
+  memberships    GroupMembership[]
+  notifications  Notification[]
+
+  @@map("students")
+}
+
+model Course {
+  course_id      String       @id @default(uuid()) @db.VarChar(36)
+  course_name    String       @db.VarChar(200)
+  department     String       @db.VarChar(100)
+  semester       String       @db.VarChar(20)
+  coordinator_id String       @db.VarChar(36)
+  description    String?      @db.Text
+  created_at     DateTime     @default(now())
+  coordinator    Coordinator  @relation(fields: [coordinator_id], references: [coordinator_id])
+  enrollments    Enrollment[]
+  study_groups   StudyGroup[]
+
+  @@map("courses")
+}
+
+model Availability {
+  availability_id String   @id @default(uuid()) @db.VarChar(36)
+  student_id      String   @db.VarChar(36)
+  day             String   @db.VarChar(10)
+  start_time      DateTime @db.Time
+  end_time        DateTime @db.Time
+  student         Student  @relation(fields: [student_id], references: [student_id], onDelete: Cascade)
+
+  @@map("availability")
+}
+
+model Enrollment {
+  student_id      String   @db.VarChar(36)
+  course_id       String   @db.VarChar(36)
+  enrollment_date DateTime @default(now()) @db.Date
+  skill_level     String   @default("Beginner") @db.VarChar(15)
+  student         Student  @relation(fields: [student_id], references: [student_id], onDelete: Cascade)
+  course          Course   @relation(fields: [course_id], references: [course_id], onDelete: Cascade)
+
+  @@id([student_id, course_id])
+  @@map("enrollments")
+}
+
+model StudyGroup {
+  group_id      String            @id @default(uuid()) @db.VarChar(36)
+  group_name    String            @db.VarChar(200)
+  course_id     String            @db.VarChar(36)
+  created_by    String            @db.VarChar(36)
+  description   String?           @db.Text
+  status        String            @default("active") @db.VarChar(10)
+  max_members   Int               @default(6)
+  member_count  Int               @default(0)
+  created_at    DateTime          @default(now())
+  course        Course            @relation(fields: [course_id], references: [course_id], onDelete: Cascade)
+  creator       Student           @relation("GroupCreator", fields: [created_by], references: [student_id])
+  memberships   GroupMembership[]
+  sessions      Session[]
+  notifications Notification[]
+
+  @@map("study_groups")
+}
+
+model GroupMembership {
+  student_id  String     @db.VarChar(36)
+  group_id    String     @db.VarChar(36)
+  role        String     @default("member") @db.VarChar(10)
+  skill_level String     @default("Beginner") @db.VarChar(15)
+  joined_at   DateTime   @default(now())
+  student     Student    @relation(fields: [student_id], references: [student_id], onDelete: Cascade)
+  group       StudyGroup @relation(fields: [group_id], references: [group_id], onDelete: Cascade)
+
+  @@id([student_id, group_id])
+  @@map("group_memberships")
+}
+
+model Session {
+  session_id       String         @id @default(uuid()) @db.VarChar(36)
+  group_id         String         @db.VarChar(36)
+  schedule_time    DateTime
+  location         String         @db.VarChar(255)
+  duration_minutes Int
+  status           String         @default("upcoming") @db.VarChar(15)
+  created_at       DateTime       @default(now())
+  group            StudyGroup     @relation(fields: [group_id], references: [group_id], onDelete: Cascade)
+  notifications    Notification[]
+
+  @@map("sessions")
+}
+
+model Notification {
+  notification_id    String      @id @default(uuid()) @db.VarChar(36)
+  student_id         String      @db.VarChar(36)
+  type               String      @db.VarChar(30)
+  title              String      @db.VarChar(200)
+  message            String      @db.Text
+  is_read            Boolean     @default(false)
+  related_group_id   String?     @db.VarChar(36)
+  related_session_id String?     @db.VarChar(36)
+  created_at         DateTime    @default(now())
+  student            Student     @relation(fields: [student_id], references: [student_id], onDelete: Cascade)
+  related_group      StudyGroup? @relation(fields: [related_group_id], references: [group_id], onDelete: SetNull)
+  related_session    Session?    @relation(fields: [related_session_id], references: [session_id], onDelete: SetNull)
+
+  @@map("notifications")
+}
