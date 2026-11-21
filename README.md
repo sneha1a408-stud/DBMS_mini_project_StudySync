@@ -1,56 +1,106 @@
-# StudySync – Smart Peer Matching & Study Group Platform
+# 📚 StudySync – Smart Peer Matching & Study Group Platform
 
-A full-stack, polyglot DBMS mini-project combining **MySQL (Relational Core)** and **MongoDB (Document-based Feedback & Reviews)** with a modern **Next.js 16** frontend and application layer. (PostgreSQL dual-compatibility is also supported via environment configuration).
+A full-stack, polyglot DBMS mini-project combining **MySQL 8.0 (ACID Relational Core)** and **MongoDB (Document-based Feedback & Reviews)** with a modern **Next.js 16** frontend and application layer.
 
 ---
 
 ## 🏛️ Architecture Overview
 
+StudySync implements a modern **Polyglot Persistence** architecture, delegating structured operational data to an ACID-compliant relational database while routing unstructured, high-throughput subjective feedback to a flexible document store:
+
 ```
-+-------------------------------------------------------------------------+
-|                               Next.js 16                                |
-|  (App Router, NextAuth.js, Server-Side API Handlers, Responsive UI)     |
-+-----------------------------------+-------------------------------------+
-                                    |
-            +-----------------------+-----------------------+
-            |                                               |
-            v                                               v
-+-------------------------------+               +-----------------------+
-|   MySQL 8.0 (ACID Core)       |               | MongoDB (Document DB) |
-|  - Students & Coordinators    |               |  - Session Feedback   |
-|  - Courses & Enrollments      |               |  - Rating (1-5 Stars) |
-|  - Availability Schedules     |               |  - Topics Covered []  |
-|  - Study Groups & Members     |               |  - Understanding Lvl  |
-|  - Sessions & Notifications   |               |  - Dynamic Comments   |
-|  - Views, Triggers, Procs     |               |  - Compound Indexes   |
-|  - Transactions & ACID safety |               |  - Aggregation Pipe   |
-+-------------------------------+               +-----------------------+
++-----------------------------------------------------------------------------------+
+|                       Next.js 16 (React 19, TypeScript)                           |
+|       (App Router, NextAuth.js Authentication, Server-Side API Handlers, CSS)      |
++-----------------------------------------+-----------------------------------------+
+                                          |
+             +----------------------------+----------------------------+
+             |                                                         |
+             v                                                         v
++---------------------------------------+   +---------------------------------------+
+|         MySQL 8.0 (ACID Core)         |   |         MongoDB (Document DB)         |
+|---------------------------------------|   |---------------------------------------|
+| • Students (`UGCS001` format)         |   | • Collection: `session_feedback`      |
+| • Coordinators (`FAC-CS-001` format)  |   | • Dynamic Arrays (`topics_covered[]`) |
+| • Courses & Enrollments (3NF)         |   | • 1-5 Star Ratings & Comprehension    |
+| • Study Groups & Member Roles         |   | • Free-form Student Feedback & Notes  |
+| • Scheduled & Completed Sessions      |   | • Multi-Stage Aggregation Pipeline    |
+| • Real-time Notification Alerts       |   | • 5 Custom Secondary & Unique Indexes |
+| • 5 Custom DB Triggers                |   +---------------------------------------+
+| • Stored Procedures & Transacted SQL  |
+| • 3 Analytical SQL Views              |
++---------------------------------------+
 ```
 
 ---
 
-## 💾 Why Polyglot Persistence? (SQL vs. NoSQL)
+## 💾 Why Polyglot Persistence? (MySQL vs. MongoDB)
 
-| Dimension | Relational Database (MySQL) | Document Database (MongoDB) |
+| Dimension | Relational Database (MySQL 8.0) | Document Database (MongoDB) |
 | :--- | :--- | :--- |
-| **Role in StudySync** | Primary relational operational store | Secondary analytical review store |
+| **Role in StudySync** | Primary operational transactional store | Analytical post-session review & feedback store |
 | **Data Handled** | User profiles, course enrollments, study group memberships, scheduled sessions | Post-session subjective student feedback, ratings, and topic tags |
-| **Schema Paradigm** | Rigid, normalized (3NF) relational tables | Dynamic, semi-structured JSON-like BSON documents |
-| **Integrity & ACID** | Strict primary/foreign keys (`ON DELETE CASCADE`), CHECK constraints, row-level transactions | Eventual consistency, schema flexibility, atomic document operations |
-| **Why Chosen Here?** | Guarantees strict referential integrity between students, groups, and academic courses. Prevents duplicate enrollments and overbooked groups via atomic triggers and transactions. | Session feedback documents vary wildly across domains (e.g. programming code snippets, subjective comprehension levels, multi-item topic tag arrays). Storing them in MongoDB avoids ALTER TABLE schema churn and allows multi-stage pipeline aggregation (`$match` + `$group`) for instant analytics. |
+| **Schema Paradigm** | Rigid, normalized (3NF) relational tables with strict constraints | Dynamic, semi-structured JSON-like BSON documents |
+| **Integrity & ACID** | Strict foreign keys (`ON DELETE CASCADE`), CHECK constraints, row-level transactions | High-speed ingestion, atomic document updates, schema agility |
+| **Why Chosen Here?** | Guarantees strict referential integrity between students, groups, and academic courses. Prevents duplicate enrollments and overbooked groups via atomic triggers and transactions. | Session feedback documents vary wildly across domains (e.g. programming code snippets, subjective comprehension levels, multi-item topic tag arrays). Storing them in MongoDB avoids schema migrations and enables instant pipeline aggregation (`$match` + `$group`). |
 
 ---
 
-## 🍃 MongoDB Architecture & Implementation
+## ⚙️ DBMS Technical Core & Implementation
+
+### 1. Relational Schema & 3NF Normalization (`database/mysql_schema.sql`)
+- **Normalized Entities**:
+  - `coordinators`: Faculty members overseeing departments (`coordinator_id`, `name`, `email`, `password_hash`).
+  - `students`: Peer learners with clean roll numbers (`student_id` e.g., `UGCS001`, `name`, `email`, `is_active`, `learning_style`).
+  - `courses`: Academic subjects mapped to coordinator owners (`course_id`, `course_name`, `department`, `coordinator_id`).
+  - `enrollments`: Student course registrations with skill tiering (`student_id`, `course_id`, `skill_level`).
+  - `study_groups`: Cohorts with strictly enforced capacity limits (`group_id`, `course_id`, `member_count`, `max_members`).
+  - `group_memberships`: Composite key `(student_id, group_id)` designating `leader` or `member` roles.
+  - `sessions`: Scheduled and completed peer meetings.
+  - `notifications`: User alert feed generated by database events.
+- **Integrity Constraints**:
+  - `FOREIGN KEY ... ON DELETE CASCADE` on child entities.
+  - `CHECK (learning_style IN ('Visual','Auditory','Reading/Writing','Kinesthetic'))`.
+  - `CHECK (member_count <= max_members)` and `CHECK (status IN ('active','full','inactive'))`.
+
+### 2. Database Triggers (`database/mysql_triggers.sql`)
+The MySQL layer implements 5 automatic triggers:
+1. **`trg_check_group_capacity`** (`BEFORE INSERT ON group_memberships`):
+   - Validates that `member_count < max_members`. Raises SQLSTATE `'45000'` (`Group is full: capacity limit reached`) if a student tries to join a full cohort.
+2. **`trg_update_member_count_insert`** (`AFTER INSERT ON group_memberships`):
+   - Atomically increments `study_groups.member_count` and updates status to `'full'` when maximum capacity is reached.
+3. **`trg_update_member_count_delete`** (`AFTER DELETE ON group_memberships`):
+   - Atomically decrements `member_count` and reopens the group (`status = 'active'`) when a student leaves or is removed.
+4. **`trg_notify_on_session`** (`AFTER INSERT ON sessions`):
+   - Automatically queries all students in `group_memberships` for that study group and generates real-time notifications with session date, time, and location.
+5. **`trg_notify_on_join`** (`AFTER INSERT ON group_memberships`):
+   - Generates a welcome notification for a student upon joining a study group.
+
+### 3. Stored Procedures (`database/mysql_procedures.sql`)
+- **`sp_create_study_group`**:
+  - Accepts `p_group_name`, `p_course_id`, `p_creator_id`, and `p_max_members`.
+  - Executes inside an ACID transaction (`START TRANSACTION ... COMMIT / ROLLBACK`), inserting the group and immediately assigning the creator the `'leader'` role in `group_memberships`.
+- **`sp_get_enrollment_stats`**:
+  - Analyzes course enrollment distribution across `'Beginner'`, `'Intermediate'`, and `'Advanced'` skill levels.
+
+### 4. SQL Views (`database/mysql_views.sql`)
+- **`v_course_health_summary`**:
+  - Aggregates enrollments, active study cohorts, and completed sessions into a single composite health score:
+    $$\text{Health Score} = \min\Big(100,\; (\text{Students} \times 10) + (\text{Groups} \times 20) + (\text{Sessions} \times 15)\Big)$$
+- **`v_student_enrollments`**:
+  - Denormalized view joining active students, courses, departments, and coordinators for fast directory queries.
+- **`v_group_membership_overview`**:
+  - Cohort overview combining group details, leaders, and member count status.
+
+---
+
+## 🍃 MongoDB Architecture & Aggregation Pipeline
 
 ### 1. Document Structure (`session_feedback` Collection)
-
-Each review document captures rich, multi-dimensional feedback from a student following a completed study session:
-
 ```json
 {
   "_id": { "$oid": "6aff543cdbc9f496c8ff04fe" },
-  "student_id": "s1000001-0000-0000-0000-000000000001",
+  "student_id": "UGCS001",
   "session_id": "e0000001-0000-0000-0000-000000000001",
   "group_id": "g0000001-0000-0000-0000-000000000001",
   "course_id": "c1000001-0000-0000-0000-000000000001",
@@ -58,201 +108,189 @@ Each review document captures rich, multi-dimensional feedback from a student fo
   "topics_covered": ["Normalization", "ER Diagrams", "Primary Keys"],
   "understanding_level": "Greatly Improved",
   "comments": "The 3NF explanation finally clicked for me during peer problem solving.",
-  "extra_resources": ["W3Schools SQL", "Course Lecture 4 PDF"],
-  "created_at": "2024-11-06T10:30:00.000Z"
+  "created_at": "2026-11-20T10:30:00.000Z"
 }
 ```
 
 ### 2. Multi-Stage Aggregation Pipeline
-
-In the Coordinator Academic Dashboard (`GET /api/coordinator/dashboard`) and Feedback API (`GET /api/feedback`), real-time analytics are computed dynamically using MongoDB's aggregation engine:
+Coordinator dashboards and Course Analytics dynamically query MongoDB to combine relational course health with real-time student satisfaction ratings:
 
 ```javascript
 db.session_feedback.aggregate([
-  // STAGE 1: $match filters documents for the coordinator's managed courses (uses index idx_course_id)
-  {
-    $match: {
-      course_id: { $in: [ "c1000001-0000-0000-0000-000000000001", "c1000002-0000-0000-0000-000000000002" ] }
-    }
-  },
-  // STAGE 2: $group computes average rating, total review volume, and distributions
+  // STAGE 1: Match reviews for coordinator's managed courses (Index scan: idx_course_id)
+  { $match: { course_id: { $in: coordinatorCourseIds } } },
+  // STAGE 2: Aggregate average rating, total volume, and rating breakdown
   {
     $group: {
       _id: "$course_id",
       avgRating: { $avg: "$rating" },
-      totalFeedback: { $sum: 1 },
-      ratingDistribution: { $push: "$rating" }
+      totalFeedback: { $sum: 1 }
     }
   },
-  // STAGE 3: $sort orders courses by average student rating descending
-  {
-    $sort: { avgRating: -1 }
-  }
-])
+  // STAGE 3: Sort by highest student rating
+  { $sort: { avgRating: -1 } }
+]);
 ```
 
-The resulting metrics (`avgRating`, `totalFeedback`) are dynamically merged with MySQL's `v_course_health_summary` view to present an integrated relational + document health matrix.
-
-### 3. MongoDB Indexes & Performance Rationale
-
-All indexes can be verified or rebuilt via `node database/mongo_indexes.js`:
-
-| Index Name | Keys / Specification | Type | Rationale & Query Pattern |
+### 3. MongoDB Indexes (`database/mongo_indexes.js`)
+| Index Name | Keys | Type | Purpose |
 | :--- | :--- | :--- | :--- |
-| `uniq_student_session_feedback` | `{ student_id: 1, session_id: 1 }` | **Unique Compound** | Enforces the core business constraint that a student can only submit **one review per session** at the database layer (preventing race conditions). Accelerates duplicate lookup query `findOne({ student_id, session_id })`. |
-| `idx_course_id` | `{ course_id: 1 }` | **Single-Field** | Converts the coordinator dashboard `$match: { course_id: { $in: [...] } }` stage from an $O(N)$ Collection Scan (`COLLSCAN`) to an $O(\log N)$ Index Scan (`IXSCAN`). |
-| `idx_session_created` | `{ session_id: 1, created_at: -1 }` | **Compound Sort** | Satisfies the query `find({ session_id }).sort({ created_at: -1 })` when students view session feedback history without requiring in-memory buffer sorts. |
-| `idx_rating` | `{ rating: 1 }` | **Single-Field** | Optimizes rating range filtering, histogram calculations, and quality audits. |
-| `idx_group_id` | `{ group_id: 1 }` | **Single-Field** | Optimizes group-level review metrics and cohort engagement queries. |
+| `uniq_student_session_feedback` | `{ student_id: 1, session_id: 1 }` | **Unique Compound** | Guarantees at database level that each student can submit at most 1 review per session. |
+| `idx_course_id` | `{ course_id: 1 }` | **Single Field** | Optimizes coordinator aggregation pipeline `$match` queries ($O(\log N)$). |
+| `idx_session_created` | `{ session_id: 1, created_at: -1 }` | **Compound Sort** | Powers chronological session review feeds without memory buffer sorts. |
+| `idx_rating` | `{ rating: 1 }` | **Single Field** | Speeds up rating distributions and audit metrics. |
+| `idx_group_id` | `{ group_id: 1 }` | **Single Field** | Accelerates cohort-level feedback analysis. |
 
 ---
 
-## 🛠️ Setup & Execution Instructions
+## 🧮 Peer Matching Algorithm
 
-### 1. Database Setup
+Study partners are ranked using a multi-factor weighted scoring function without external machine learning dependencies:
 
-#### MySQL 8.0 Setup (Primary Relational Core):
-```bash
-# Execute schema, views, triggers, procedures, and seed data in MySQL
-mysql -u root -p < database/mysql_schema.sql
-mysql -u root -p < database/mysql_views.sql
-mysql -u root -p < database/mysql_triggers.sql
-mysql -u root -p < database/mysql_procedures.sql
-mysql -u root -p < database/mysql_seed.sql
+$$\text{Compatibility Score} = 0.35 \times \text{Availability} + 0.30 \times \text{Skill} + 0.20 \times \text{Learning Style} + 0.15 \times \text{Shared Courses}$$
+
+1. **Availability Overlap (35%)**: Time-slot intersection across weekly recurring Monday–Sunday schedules.
+2. **Skill Complementarity (30%)**: Pairs beginner students with intermediate/advanced peers to foster peer mentoring.
+3. **VARK Learning Style Harmony (20%)**: Compatibility scoring across Visual, Auditory, Reading/Writing, and Kinesthetic learners.
+4. **Shared Course Enrollments (15%)**: Normalized intersection of mutual course enrollments.
+
+---
+
+## 🚀 Application Portals & Key Features
+
+### 🎓 Student Portal
+- **Dashboard (`/student/dashboard`)**: Upcoming sessions, recent notifications, top recommended study matches.
+- **My Courses (`/student/courses`)**: Enrolled courses and skill level selectors.
+- **Schedule (`/student/availability`)**: Weekly recurring availability manager.
+- **Find Partners (`/student/partners`)**: Compatibility-ranked peer recommendations with detailed breakdown bars.
+- **Study Groups (`/student/groups`)**: Browse active cohorts, live capacity indicators, create/join/leave groups.
+- **Sessions (`/student/sessions`)**: Schedule new sessions, mark completed, submit MongoDB star ratings and feedback.
+- **Notifications (`/student/notifications`)**: Real-time notifications powered by MySQL triggers (`trg_notify_on_session`).
+
+### 👩‍🏫 Coordinator Portal
+- **Dashboard (`/coordinator/dashboard`)**: Key metrics (total students, assigned courses, active cohorts, sessions).
+- **Curriculum (`/coordinator/courses`)**: View and manage assigned courses; coordinators only access their assigned cohorts.
+- **Students Directory (`/coordinator/students`)**: Search and filter enrolled students. **Includes account deletion and access revocation**:
+  - Coordinators can delete students in their cohorts.
+  - Deletion removes enrollments and group memberships (triggering `trg_update_member_count_delete`).
+  - Sets `is_active = FALSE`; subsequent login attempts are rejected with: *"Access Revoked: Your account has been removed by the course coordinator."*
+- **Study Groups Monitor (`/coordinator/groups`)**: Live group capacity monitoring.
+- **Course Health Summary (`/coordinator/analytics`)**: Focused course health matrix combining MySQL metrics with MongoDB star ratings.
+
+### 🛠️ Administrative CLI Tools
+- **Add Coordinator CLI**:
+  ```powershell
+  node scripts/create_coordinator.js "Prof. Alan Turing" "alan.turing@studysync.edu" "Password@123" "Theory of Computation, Discrete Mathematics"
+  ```
+  Automatically formats coordinator ID (`FAC-CS-00X`), hashes password with bcrypt, and creates/links assigned courses.
+
+---
+
+## 💻 Setup & Installation Guide
+
+### Prerequisites
+- **Node.js** (v18 or higher)
+- **MySQL Server 8.0+** running locally (port `3306`)
+- **MongoDB Server 6.x / 7.x / 8.x** running locally (port `27017`)
+
+---
+
+### Step 1: Database Initialization
+
+#### 1. MySQL 8.0 Setup:
+```powershell
+# Open PowerShell and run the initialization script:
+node scripts/safe_init_mysql.js
 ```
+*(Alternatively, execute `database/mysql_schema.sql`, `database/mysql_views.sql`, `database/mysql_triggers.sql`, `database/mysql_procedures.sql`, and `database/mysql_seed.sql` in MySQL Workbench or the MySQL CLI).*
 
-#### MongoDB 8.x / 7.x Setup (Secondary Document Store):
-```bash
-# 1. Ensure MongoDB service is running (default port 27017)
-# On Windows (Services): Net Start MongoDB
-
-# 2. Build indexes on session_feedback collection
+#### 2. MongoDB Setup:
+```powershell
+# Build indexes and seed sample reviews:
 node database/mongo_indexes.js
-
-# 3. Seed sample feedback documents safely (non-destructive, preserves existing data)
 node database/mongodb_seed.js
 ```
 
-#### Run Comprehensive Verification Suite:
-```bash
-node scripts/test_mongodb_integration.js
+---
+
+### Step 2: Configure Environment Variables
+
+In `studysync/.env`:
+```env
+# MySQL Database Connection (URL-encode special characters like # as %23)
+DATABASE_URL="mysql://root:YourPassword@localhost:3306/studysync"
+
+# MongoDB Connection
+MONGODB_URI="mongodb://localhost:27017/studysync"
+
+# NextAuth Authentication
+NEXTAUTH_SECRET="studysync-dev-secret-key-32chars-long-change-in-prod"
+AUTH_TRUST_HOST="true"
+
+NODE_ENV="development"
 ```
 
-### 2. Frontend & API Setup
-```bash
+---
+
+### Step 3: Run the Next.js Application
+
+```powershell
 cd studysync
 
-# Install dependencies (if not already installed)
+# Install dependencies
 npm install
 
-# Run Development Server
+# Run development server for your laptop (localhost:3000)
 npm run dev
+
+# OR run development server accessible to teammates on the same local Wi-Fi
+npm run dev:network
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+Open [http://localhost:3000](http://localhost:3000) (or `http://<YOUR-IP>:3000` from a teammate's laptop).
 
 ---
 
-## 💾 DBMS Concepts Implemented
+## 🔑 Test Credentials
 
-### 1. Relational Database Design (PostgreSQL)
-- **Entities & Relationships in 3NF**:
-  - `coordinators` (1:N with `courses`)
-  - `students` (1:N with `availability`, M:N with `courses` through `enrollments`)
-  - `study_groups` (1:N with `group_memberships` and `sessions`)
-  - `group_memberships` (Composite primary key `(student_id, group_id)`, roles: `leader`, `member`)
-  - `sessions` (Scheduled & completed group meetings)
-  - `notifications` (User activity alerts)
-- **Integrity Constraints**: Foreign keys with `ON DELETE CASCADE`, check constraints on ratings/capacities, unique constraints on user emails.
-
-### 2. SQL Views (`database/views.sql`)
-- `v_course_health_summary`: Calculates real-time course engagement metric based on enrollments, active cohorts, and completed sessions:
-  $$\text{Health Score} = \min(100, \text{Students} \times 10 + \text{Groups} \times 20 + \text{Sessions} \times 15)$$
-- `v_student_enrollments`: Aggregates student profiles, learning styles, and course metadata for coordinator reporting.
-- `v_group_membership_overview`: Denormalizes study groups with leader details, member counts, and session frequencies.
-
-### 3. Database Triggers (`database/triggers.sql`)
-- `trg_check_group_capacity`: **BEFORE INSERT** trigger on `group_memberships`. Prevents joining a study group when `member_count >= max_members`.
-- `trg_update_member_count`: **AFTER INSERT OR DELETE** trigger on `group_memberships`. Atomically maintains the cached `member_count` on `study_groups`.
-
-### 4. Stored Procedures & Functions (`database/procedures.sql`)
-- `fn_create_study_group(group_name, course_id, student_id, max_members)`: Atomically inserts a study group and automatically grants the creator the `leader` role inside a transaction.
-- `fn_get_enrollment_stats(course_id)`: Generates breakdown of student skill tiers (`Beginner`, `Intermediate`, `Advanced`).
-- `fn_get_group_stats()`: Reports total active vs. full study groups.
-
-### 5. Polyglot Persistence & NoSQL Integration (MongoDB)
-- MongoDB is employed for flexible, schema-less study session feedback (`session_feedback` collection).
-- Accommodates varied dynamic fields (arrays of `topics_covered`, subjective comprehension levels, open-ended reflections).
-- Aggregation pipeline calculates real-time course quality ratings:
-  ```javascript
-  db.session_feedback.aggregate([
-    { $match: { course_id: { $in: courseIds } } },
-    { $group: { _id: '$course_id', avgRating: { $avg: '$rating' }, totalFeedback: { $sum: 1 } } }
-  ])
-  ```
+| Role | Email | Password | Details |
+| :--- | :--- | :--- | :--- |
+| **Coordinator (Faculty)** | `johnsmith@studysync.edu` | `Coordinator@123` | Prof. John Smith (`FAC-CS-001`) — DBMS & ML |
+| **Coordinator (Faculty)** | `sarah.chen@studysync.edu` | `Coordinator@123` | Dr. Sarah Chen (`FAC-CS-002`) — OS & Algorithms |
+| **Student** | `alice.johnson@student.edu` | `Student@123` | Alice Johnson (`UGCS002`) |
+| **Student** | `bob.martinez@student.edu` | `Student@123` | Bob Martinez (`UGCS003`) |
 
 ---
 
-## 🧮 Compatibility Matching Algorithm
+## 📁 Repository Structure
 
-The smart study partner recommendation engine evaluates four normalized compatibility factors without machine learning overhead:
-
-$$\text{Score} = 0.35 \times \text{Availability} + 0.30 \times \text{Skill} + 0.20 \times \text{Learning Style} + 0.15 \times \text{Shared Courses}$$
-
-1. **Availability Overlap (35%)**: Time-interval overlap calculation across recurring weekly slots (Monday–Sunday).
-2. **Skill Complementarity (30%)**: Pairs beginner students with intermediate/advanced mentors to encourage peer learning.
-3. **VARK Learning Style Harmony (20%)**: Visual, Auditory, Read/Write, Kinesthetic compatibility matrix.
-4. **Shared Course Enrollments (15%)**: Normalized intersection of mutual enrolled subjects.
-
----
-
-## 🚀 Application Structure
-
-### Student Portal
-- **Dashboard** (`/student/dashboard`): Academic progress, enrolled courses, upcoming sessions, matching shortcut.
-- **Profile** (`/student/profile`): Bio, VARK learning style selector, profile completeness rating.
-- **My Courses** (`/student/courses`): Enrolled course cards, skill level declaration, course catalog browser.
-- **Schedule** (`/student/availability`): Weekly time window manager for Monday–Sunday free hours.
-- **Find Partners** (`/student/partners`): Compatibility ranked peer cards with breakdown metrics and filters.
-- **Study Groups** (`/student/groups`): Cohort browser, capacity meters, create group modal, join/leave actions.
-- **Sessions** (`/student/sessions`): Session scheduler, completion marker, MongoDB feedback modal with star ratings.
-- **Notifications** (`/student/notifications`): Real-time activity alerts and mark-as-read controls.
-
-### Coordinator Portal
-- **Dashboard** (`/coordinator/dashboard`): High-level KPIs, course health matrix, skill distribution & learning style breakdown.
-- **Curriculum** (`/coordinator/courses`): Create & manage courses, monitor student numbers per course.
-- **Students Directory** (`/coordinator/students`): Searchable student table querying SQL View `v_student_enrollments`.
-- **Groups Monitor** (`/coordinator/groups`): Study group utilization meters, capacity trigger tracking.
-- **DBMS Analytics** (`/coordinator/analytics`): Deep dive into SQL Views, trigger definitions, and polyglot architecture.
-
----
-
-## 🛠️ Setup & Execution Instructions
-
-### 1. Database Setup
-```bash
-# PostgreSQL Setup
-psql -U postgres -d postgres -c "CREATE DATABASE studysync;"
-psql -U postgres -d studysync -f database/schema.sql
-psql -U postgres -d studysync -f database/indexes.sql
-psql -U postgres -d studysync -f database/triggers.sql
-psql -U postgres -d studysync -f database/procedures.sql
-psql -U postgres -d studysync -f database/views.sql
-psql -U postgres -d studysync -f database/seed.sql
-
-# MongoDB Setup
-mongosh studysync database/mongodb_seed.js
 ```
-
-### 2. Frontend & API Setup
-```bash
-cd studysync
-
-# Generate Prisma Client
-npx prisma generate
-
-# Run Development Server
-npm run dev
+DBMS_mini_project/
+├── .gitignore                      # Git exclusion rules (node_modules, .env, build files)
+├── README.md                       # Complete project documentation & DBMS architecture guide
+├── database/                       # SQL & NoSQL Database Artifacts
+│   ├── mysql_schema.sql            # MySQL 3NF tables & constraints
+│   ├── mysql_triggers.sql          # 5 MySQL triggers (capacity, counts, notifications)
+│   ├── mysql_views.sql             # SQL views (course health, student enrollments)
+│   ├── mysql_procedures.sql        # Transacted stored procedures
+│   ├── mysql_seed.sql              # Clean initial relational dataset
+│   ├── mongo_indexes.js            # MongoDB compound & unique index builder
+│   └── mongodb_seed.js             # MongoDB reviews seeder
+├── scripts/                        # Utility & Automation Scripts
+│   ├── create_coordinator.js       # CLI tool to register coordinators and courses
+│   ├── safe_init_mysql.js          # Automated database setup runner
+│   ├── setup_notifications.js      # Notification triggers and backfill script
+│   └── test_mongodb_integration.js # Integration test suite
+└── studysync/                      # Full-stack Next.js Web Application
+    ├── package.json                # Project dependencies and run scripts
+    ├── prisma/
+    │   └── schema.prisma           # Prisma Object-Relational Model
+    └── src/
+        ├── app/
+        │   ├── api/                # Next.js API Routes (Auth, Coordinator, Students, Sessions, Feedback)
+        │   ├── coordinator/        # Coordinator pages (Dashboard, Curriculum, Students, Analytics)
+        │   ├── student/            # Student pages (Dashboard, Partners, Groups, Sessions, Notifications)
+        │   └── login/ & register/  # Authentication views
+        ├── components/             # Reusable UI components and Sidebar
+        └── lib/                    # Core libraries (MySQL pool, MongoDB client, NextAuth, Matching algorithm)
 ```
-
-Open [http://localhost:3000](http://localhost:3000) in your browser.
