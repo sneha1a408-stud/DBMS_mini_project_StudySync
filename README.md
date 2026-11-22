@@ -1,10 +1,10 @@
-# 📚 StudySync – Smart Peer Matching & Study Group Platform
+# StudySync – Smart Peer Matching & Study Group Platform
 
 A full-stack, polyglot DBMS mini-project combining **MySQL 8.0 (ACID Relational Core)** and **MongoDB (Document-based Feedback & Reviews)** with a modern **Next.js 16** frontend and application layer.
 
 ---
 
-## 🏛️ Architecture Overview
+## Architecture Overview
 
 StudySync implements a modern **Polyglot Persistence** architecture, delegating structured operational data to an ACID-compliant relational database while routing unstructured, high-throughput subjective feedback to a flexible document store:
 
@@ -34,7 +34,7 @@ StudySync implements a modern **Polyglot Persistence** architecture, delegating 
 
 ---
 
-## 💾 Why Polyglot Persistence? (MySQL vs. MongoDB)
+## Why Polyglot Persistence? (MySQL vs. MongoDB)
 
 | Dimension | Relational Database (MySQL 8.0) | Document Database (MongoDB) |
 | :--- | :--- | :--- |
@@ -46,7 +46,7 @@ StudySync implements a modern **Polyglot Persistence** architecture, delegating 
 
 ---
 
-## ⚙️ DBMS Technical Core & Implementation
+## DBMS Technical Core & Implementation
 
 ### 1. Relational Schema & 3NF Normalization (`database/mysql_schema.sql`)
 - **Normalized Entities**:
@@ -94,7 +94,7 @@ The MySQL layer implements 5 automatic triggers:
 
 ---
 
-## 🍃 MongoDB Architecture & Aggregation Pipeline
+## MongoDB Architecture & Aggregation Pipeline
 
 ### 1. Document Structure (`session_feedback` Collection)
 ```json
@@ -143,7 +143,7 @@ db.session_feedback.aggregate([
 
 ---
 
-## 🧮 Peer Matching Algorithm
+## Peer Matching Algorithm
 
 Study partners are ranked using a multi-factor weighted scoring function without external machine learning dependencies:
 
@@ -156,9 +156,9 @@ $$\text{Compatibility Score} = 0.35 \times \text{Availability} + 0.30 \times \te
 
 ---
 
-## 🚀 Application Portals & Key Features
+## Application Portals & Key Features
 
-### 🎓 Student Portal
+### Student Portal
 - **Dashboard (`/student/dashboard`)**: Upcoming sessions, recent notifications, top recommended study matches.
 - **My Courses (`/student/courses`)**: Enrolled courses and skill level selectors.
 - **Schedule (`/student/availability`)**: Weekly recurring availability manager.
@@ -167,7 +167,7 @@ $$\text{Compatibility Score} = 0.35 \times \text{Availability} + 0.30 \times \te
 - **Sessions (`/student/sessions`)**: Schedule new sessions, mark completed, submit MongoDB star ratings and feedback.
 - **Notifications (`/student/notifications`)**: Real-time notifications powered by MySQL triggers (`trg_notify_on_session`).
 
-### 👩‍🏫 Coordinator Portal
+### Coordinator Portal
 - **Dashboard (`/coordinator/dashboard`)**: Key metrics (total students, assigned courses, active cohorts, sessions).
 - **Curriculum (`/coordinator/courses`)**: View and manage assigned courses; coordinators only access their assigned cohorts.
 - **Students Directory (`/coordinator/students`)**: Search and filter enrolled students. **Includes account deletion and access revocation**:
@@ -177,7 +177,7 @@ $$\text{Compatibility Score} = 0.35 \times \text{Availability} + 0.30 \times \te
 - **Study Groups Monitor (`/coordinator/groups`)**: Live group capacity monitoring.
 - **Course Health Summary (`/coordinator/analytics`)**: Focused course health matrix combining MySQL metrics with MongoDB star ratings.
 
-### 🛠️ Administrative CLI Tools
+### Administrative CLI Tools
 - **Add Coordinator CLI**:
   ```powershell
   node scripts/create_coordinator.js "Prof. Alan Turing" "alan.turing@studysync.edu" "Password@123" "Theory of Computation, Discrete Mathematics"
@@ -186,7 +186,7 @@ $$\text{Compatibility Score} = 0.35 \times \text{Availability} + 0.30 \times \te
 
 ---
 
-## 💻 Setup & Installation Guide
+## Setup & Installation Guide
 
 ### Prerequisites
 - **Node.js** (v18 or higher)
@@ -251,7 +251,7 @@ Open [http://localhost:3000](http://localhost:3000) (or `http://<YOUR-IP>:3000` 
 
 ---
 
-## 🔑 Test Credentials
+## Test Credentials
 
 | Role | Email | Password | Details |
 | :--- | :--- | :--- | :--- |
@@ -262,7 +262,7 @@ Open [http://localhost:3000](http://localhost:3000) (or `http://<YOUR-IP>:3000` 
 
 ---
 
-## 📁 Repository Structure
+## Repository Structure
 
 ```
 DBMS_mini_project/
